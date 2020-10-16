@@ -23,14 +23,14 @@ int main(int argc, char const *argv[])
         perror("socket failed");
         exit(EXIT_FAILURE);
     }
-
-    // Forcefully attaching socket to the port 8080
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
-                                                  &opt, sizeof(opt)))
-    {
-        perror("setsockopt");
-        exit(EXIT_FAILURE);
-    }
+    // modified to resolve setsockopt: Protocol not available issue in OS X
+    if (
+        setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) ||
+        setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt))
+    ) {
+        perror("setsockopt"); 
+        exit(EXIT_FAILURE); 
+    } 
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons( PORT );
@@ -53,10 +53,47 @@ int main(int argc, char const *argv[])
         perror("accept");
         exit(EXIT_FAILURE);
     }
-    valread = read( new_socket , buffer, 1024);
-    printf("%s\n",buffer );
-    send(new_socket , hello , strlen(hello) , 0 );
-    printf("Hello message sent\n");
+
+    //Privilege Seperation Code 
+
+    // split is made here to seperate socket setup and data processing
+
+    int pid = fork();
+    
+    
+    if (pid < 0)
+    {
+        // Error if process id is negative, exit gracefully
+        printf("Error while creating child process! Fork Failed!");
+        exit(EXIT_FAILURE);
+    }
+
+    if (pid == 0)
+    {
+        // If process id is zero, in child process
+        printf("Printing from Child process\n");
+        // Try to set uid.
+        if (setuid(-2) < 0)
+        {
+            // in case of error gracefully exit
+            perror("Error while setting uid!");
+            exit(EXIT_FAILURE);
+        }
+        else
+        {
+            // Send the message from the child with lower privileges than parent
+            valread = read( new_socket , buffer, 1024);
+            printf("%s\n", buffer);
+            send(new_socket , hello , strlen(hello) , 0 );
+            printf("Hello message sent\n");
+        }
+    }
+    else
+    {
+        //If process id is greater than zero, in parent process
+        printf("Printing from parent\nWait for child process\n");
+        wait(NULL);
+    } 
     return 0;
 }
 
